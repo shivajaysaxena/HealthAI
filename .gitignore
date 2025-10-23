@@ -1,0 +1,29 @@
+# 🔒 Environment Files
+.env
+
+# 🧠 Local Databases
+users.db
+medical_db/
+
+# 🗃️ Python Cache & Build Files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+
+# 🧰 Virtual Environment
+venv/
+env/
+
+# 🧩 Streamlit Cache
+.streamlit/
+
+# 🧪 Temporary / Log Files
+*.log
+*.tmp
+*.bak
+
+# 💻 OS Specific Files
+.DS_Store
+Thumbs.db

@@ -1,58 +1,79 @@
-# 🩺 AI Medical Assistant
+# 🩺 **AI Medical Assistant**
 
-A voice-based health symptom analyzer that transcribes speech in multiple Indian languages, translates to English, and provides AI-powered medical analysis.
+### A voice-powered health symptom analyzer that listens in **multiple Indian languages**, transcribes and translates your speech into English, and delivers **AI-driven medical analysis** using Retrieval-Augmented Generation (RAG).
 
-## 🌟 About the Project
+---
 
-This application allows users to:
-- Record their symptoms in any supported Indian language
-- Get automatic transcription using Sarvam AI
-- Translate the transcript to English
-- Receive AI-generated medical analysis with specialist recommendations using Mistral AI
+## 🚀 **Newly Added Features**
 
-**Supported Languages:** Hindi, English, Bengali, Kannada, Malayalam, Marathi, Odia, Punjabi, Tamil, Telugu, Gujarati
+### 🔐 **User Authentication**
+- Secure **Login / Signup** system  
+- **Password hashing** using industry standards  
+- **SQLite database** for user management  
 
-## 📁 Project Structure
+### 📜 **Personal Medical History**
+- Automatically save **all past consultations**  
+- View your **complete health history** anytime  
+- Acts as your **personal health record**  
+
+### 🧠 **RAG-Powered AI Analysis**
+- Integrated **ChromaDB** medical knowledge base  
+- Context-aware responses with **retrieved insights**  
+- Smarter and more reliable **diagnostic explanations**
+
+---
+
+## 🗂️ **Updated Project Structure**
 
 ```
 medical-assistant/
 │
-├── app.py                      # Main Streamlit application
+├── app.py                      # Main Streamlit application (auth + RAG)
 │
 ├── modules/
-│   ├── speech_to_text.py       # Sarvam AI speech-to-text
-│   ├── translate.py            # Sarvam AI translation
-│   └── llm_analysis.py         # Mistral AI medical analysis
+│   ├── speech_to_text.py       # Sarvam AI - Speech Recognition
+│   ├── translate.py            # Sarvam AI - Translation
+│   ├── llm_analysis.py         # Mistral AI - Medical Analysis with RAG
+│   ├── auth.py                 # User Authentication (NEW)
+│   └── rag_medical.py          # RAG Implementation (NEW)
 │
-├── .env                        # API keys (create this file)
-├── requirements.txt            # Python dependencies
+├── medical_db/                 # ChromaDB vector store (auto-created)
+├── users.db                    # SQLite database (auto-created)
+├── .env                        # API keys
+├── requirements.txt            # Dependencies
 └── README.md                   # Documentation
 ```
 
-## 🚀 How to Run
+---
 
-### 1. Clone the Repository
-```bash
-git clone <repository-url>
-cd medical-assistant
-```
+## ⚙️ **Installation Guide**
 
-### 2. Install Dependencies
+### **1️⃣ Install Dependencies**
 ```bash
 pip install -r requirements.txt
 ```
 
-For PyAudio installation:
-- **Windows:** `pip install pipwin && pipwin install pyaudio`
-- **macOS:** `brew install portaudio && pip install pyaudio`
-- **Linux:** `sudo apt-get install portaudio19-dev python3-pyaudio && pip install pyaudio`
+### **2️⃣ Install PyAudio (for voice input)**
 
-### 3. Get API Keys
+**Windows**
+```bash
+pip install pipwin
+pipwin install pyaudio
+```
 
-- **Sarvam AI:** Sign up at [dashboard.sarvam.ai](https://dashboard.sarvam.ai)
-- **Mistral AI:** Sign up at [console.mistral.ai](https://console.mistral.ai)
+**macOS**
+```bash
+brew install portaudio
+pip install pyaudio
+```
 
-### 4. Create `.env` File
+**Linux**
+```bash
+sudo apt-get install portaudio19-dev python3-pyaudio
+pip install pyaudio
+```
+
+### **3️⃣ Set Up Environment Variables**
 
 Create a `.env` file in the project root:
 ```
@@ -60,27 +81,91 @@ SARVAM_API_KEY=your_sarvam_api_key
 MISTRAL_API_KEY=your_mistral_api_key
 ```
 
-### 5. Run the Application
+### **4️⃣ Run the Application**
 ```bash
 streamlit run app.py
 ```
 
-The app will open at `http://localhost:8501`
+Then open [http://localhost:8501](http://localhost:8501)
 
-## 📖 Usage
+---
 
-1. Click **"🎤 Start Recording"** and speak your symptoms
-2. Click **"⏹️ Stop Recording"** when done
-3. Click **"🩺 Process Audio"** to analyze
-4. View the transcript, translation, and medical analysis
+## 🧾 **First-Time Setup**
 
-## ⚠️ Disclaimer
+1. **Sign Up** for a new account  
+2. Provide **username, email, and password**  
+3. Passwords must be **6+ characters**  
+4. After login, your **health records** and **RAG analyses** are automatically saved  
 
-This is for educational purposes only and not a substitute for professional medical advice.
+---
 
-## 🛠️ Technologies
+## 🌟 **How It Works**
 
-- Streamlit - Web interface
-- Sarvam AI - Speech-to-text & Translation
-- Mistral AI - Medical analysis
-- PyAudio - Audio recording
+1. Click **🎤 Start Recording** and describe your symptoms in your native language  
+2. Click **⏹️ Stop Recording** when done  
+3. Click **🩺 Process Audio** to analyze  
+4. View:
+   - **Transcription** (via Sarvam AI)
+   - **English Translation**
+   - **Medical Analysis & Recommendations** (via Mistral AI + RAG)
+
+---
+
+## 🧩 **Supported Languages**
+
+> Hindi | English | Bengali | Kannada | Malayalam | Marathi | Odia | Punjabi | Tamil | Telugu | Gujarati  
+
+---
+
+## 🧠 **Behind the Scenes**
+
+| Component | Technology | Purpose |
+|------------|-------------|----------|
+| 🎤 Speech Recognition | Sarvam AI STT | Converts user’s speech into text |
+| 🌐 Translation | Sarvam AI Translator | Translates local language → English |
+| 🧠 AI Analysis | Mistral AI | Generates contextual medical insights |
+| 📚 Knowledge Retrieval | ChromaDB | Provides relevant medical information |
+| 🔒 Authentication | SQLite + Hashing | Manages users and data security |
+| 💾 Storage | Streamlit + Local DB | Stores consultations and RAG data |
+
+---
+
+## ⚠️ **Disclaimer**
+This application is designed **for educational and research purposes only**.  
+It is **not a substitute for professional medical consultation**. Always seek advice from a certified healthcare provider.
+
+---
+
+## 🛠️ **Tech Stack**
+
+- **Streamlit** – Interactive web interface  
+- **Sarvam AI** – Speech recognition & translation  
+- **Mistral AI** – Large language model for medical insights  
+- **ChromaDB** – Vector-based medical knowledge retrieval  
+- **SQLite** – Lightweight database for users & records  
+- **PyAudio** – Real-time voice recording  
+
+---
+
+## 📦 **Quick Start**
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd medical-assistant
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure API keys
+echo "SARVAM_API_KEY=your_sarvam_api_key" >> .env
+echo "MISTRAL_API_KEY=your_mistral_api_key" >> .env
+
+# Run the app
+streamlit run app.py
+```
+
+---
+
+## ❤️ **Contributors**
+**Developed by:** [Shivajay Saxena](https://github.com/shivajaysaxena)
