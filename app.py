@@ -13,9 +13,9 @@ load_dotenv()
 
 from modules.speech_to_text import transcribe_audio
 from modules.translate import translate_to_english
-from modules.llm_analysis import analyze_symptoms_with_rag
 from modules.auth import AuthSystem
 from modules.rag_medical import MedicalRAG
+from modules.conversation import MedicalConversation
 
 # Initialize systems
 auth = AuthSystem()
@@ -38,6 +38,12 @@ if "recording_event" not in st.session_state:
     st.session_state.recording_event = threading.Event()
 if "page" not in st.session_state:
     st.session_state.page = "login"
+if "conversation" not in st.session_state:
+    st.session_state.conversation = MedicalConversation()
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
+if "consultation_mode" not in st.session_state:
+    st.session_state.consultation_mode = "chat"  # chat or voice
 
 def record_audio(file_path, event):
     CHUNK = 1024
@@ -145,7 +151,7 @@ def main_app():
         st.title(f"👤 {st.session_state.user['username']}")
         st.markdown("---")
         
-        menu = st.radio("Navigation", ["🏠 Home", "📜 History", "ℹ️ About"])
+        menu = st.radio("Navigation", ["🏠 Consultation", "📜 History", "ℹ️ About"])
         
         st.markdown("---")
         
@@ -153,116 +159,251 @@ def main_app():
         stats = rag.get_collection_stats()
         st.info(f"📚 Medical KB: {stats['total_documents']} documents")
         
+        # Show consultation count
+        records = auth.get_user_history(st.session_state.user['id'])
+        st.success(f"💾 Saved Consultations: {len(records)}")
+        
         if st.button("🚪 Logout"):
             st.session_state.authenticated = False
             st.session_state.user = None
             st.session_state.audio_file = None
+            st.session_state.conversation = MedicalConversation()
+            st.session_state.chat_messages = []
             st.session_state.page = "login"
+            if "last_saved_consultation" in st.session_state:
+                del st.session_state.last_saved_consultation
             st.rerun()
     
-    if menu == "🏠 Home":
-        home_page()
+    if menu == "🏠 Consultation":
+        consultation_page()
     elif menu == "📜 History":
         history_page()
     elif menu == "ℹ️ About":
         about_page()
 
-def home_page():
-    st.title("🩺 Voice-based Health Symptom Analyzer")
-    st.write("🎙️ Speak in any language — get transcript, translation, and AI-powered medical analysis with RAG.")
+def consultation_page():
+    st.title("🩺 Medical Consultation")
     
-    # Recording controls
+    # Mode selector
     col1, col2 = st.columns(2)
-
-    if col1.button("🎤 Start Recording") and not st.session_state.recording:
-        st.session_state.recording = True
-        st.session_state.recording_event.set()
-        
-        temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-        st.session_state.audio_file = temp_wav.name
-        temp_wav.close()
-        
-        st.session_state.recording_thread = threading.Thread(
-            target=record_audio, 
-            args=(st.session_state.audio_file, st.session_state.recording_event), 
-            daemon=True
-        )
-        st.session_state.recording_thread.start()
-        st.info("🎙️ Recording started... Speak now!")
-
-    if col2.button("⏹️ Stop Recording") and st.session_state.recording:
-        st.session_state.recording_event.clear()
-        st.session_state.recording = False
-        
-        if st.session_state.recording_thread:
-            st.session_state.recording_thread.join(timeout=2)
-        
-        time.sleep(0.5)
-        st.success("✅ Recording stopped!")
-        
-        if st.session_state.audio_file:
-            try:
-                with open(st.session_state.audio_file, 'rb') as audio_file:
-                    audio_bytes = audio_file.read()
-                    st.audio(audio_bytes, format="audio/wav")
-            except Exception as e:
-                st.error(f"Could not load audio: {e}")
-
-    # Process audio
-    if st.session_state.audio_file and not st.session_state.recording:
-        if st.button("🩺 Process Audio"):
-            st.info("Processing audio... please wait ⏳")
-            try:
-                if not os.path.exists(st.session_state.audio_file):
-                    st.error("❌ Audio file not found")
-                elif os.path.getsize(st.session_state.audio_file) == 0:
-                    st.error("❌ Audio file is empty")
-                else:
-                    with st.spinner("Transcribing audio..."):
-                        transcript, lang = transcribe_audio(st.session_state.audio_file)
-                    
-                    if transcript:
-                        st.subheader("🗣️ Transcript")
-                        st.write(transcript)
-                        st.info(f"Detected language: {lang}")
-
-                        with st.spinner("Translating to English..."):
-                            english_text = translate_to_english(transcript)
-                        
-                        st.subheader("🌐 English Translation")
-                        st.write(english_text)
-
-                        with st.spinner("Analyzing symptoms with RAG..."):
-                            analysis = analyze_symptoms_with_rag(english_text, rag)
-                        
-                        st.subheader("🩺 Medical Analysis (RAG-Enhanced)")
-                        st.markdown(analysis)
-                        
-                        # Save to history
-                        auth.save_medical_record(
-                            st.session_state.user['id'],
-                            transcript,
-                            english_text,
-                            analysis,
-                            lang
-                        )
-                        st.success("✅ Consultation saved to your history")
-                    else:
-                        st.error("❌ Could not transcribe audio. Please try recording again.")
-            except requests.exceptions.HTTPError as e:
-                st.error(f"❌ API Error: {e}")
-                if hasattr(e, 'response') and e.response is not None:
-                    st.error(f"Response: {e.response.text}")
-            except Exception as e:
-                st.error(f"❌ Error processing audio: {e}")
-
-    # Reset button
-    if st.session_state.audio_file:
-        if st.button("🔄 Reset / New Recording"):
-            st.session_state.audio_file = None
-            st.session_state.recording = False
-            st.session_state.recording_event.clear()
+    with col1:
+        if st.button("💬 Chat Mode", use_container_width=True, 
+                    type="primary" if st.session_state.consultation_mode == "chat" else "secondary"):
+            st.session_state.consultation_mode = "chat"
             st.rerun()
+    with col2:
+        if st.button("🎤 Voice Mode", use_container_width=True,
+                    type="primary" if st.session_state.consultation_mode == "voice" else "secondary"):
+            st.session_state.consultation_mode = "voice"
+            st.rerun()
+    
+    st.markdown("---")
+    
+    if st.session_state.consultation_mode == "chat":
+        chat_consultation()
+    else:
+        voice_consultation()
+
+def chat_consultation():
+    """Chat-based consultation"""
+    
+    st.write("💬 **Chat with the AI Doctor**")
+    
+    # Display chat messages
+    chat_container = st.container()
+    with chat_container:
+        for message in st.session_state.chat_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+    
+    # Show consultation status
+    if st.session_state.conversation.is_consultation_complete():
+        # Auto-save if not already saved
+        if "last_saved_consultation" not in st.session_state or \
+           st.session_state.last_saved_consultation != len(st.session_state.chat_messages):
+            save_consultation_to_history()
+            st.session_state.last_saved_consultation = len(st.session_state.chat_messages)
+            st.success("✅ Consultation Complete! Automatically saved to your history.")
+        else:
+            st.success("✅ Consultation Complete! Saved in your medical history.")
+        
+        if st.button("🔄 New Consultation", use_container_width=True):
+            st.session_state.conversation.reset()
+            st.session_state.chat_messages = []
+            if "last_saved_consultation" in st.session_state:
+                del st.session_state.last_saved_consultation
+            st.rerun()
+    else:
+        # Chat input
+        user_input = st.chat_input("Describe your symptoms or answer the doctor's questions...")
+        
+        if user_input:
+            # Add user message to display
+            st.session_state.chat_messages.append({"role": "user", "content": user_input})
+            
+            # Get AI response
+            with st.spinner("Doctor is thinking..."):
+                ai_response = st.session_state.conversation.get_ai_response(user_input, rag)
+            
+            # Add AI response to display
+            st.session_state.chat_messages.append({"role": "assistant", "content": ai_response})
+            
+            st.rerun()
+        
+        # Reset button
+        if len(st.session_state.chat_messages) > 0:
+            if st.button("🔄 Start Over"):
+                st.session_state.conversation.reset()
+                st.session_state.chat_messages = []
+                if "last_saved_consultation" in st.session_state:
+                    del st.session_state.last_saved_consultation
+                st.rerun()
+
+def voice_consultation():
+    """Voice-based consultation"""
+    
+    st.write("🎤 **Speak your symptoms or responses**")
+    
+    # Display conversation history
+    if st.session_state.chat_messages:
+        st.subheader("Conversation")
+        for message in st.session_state.chat_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+        st.markdown("---")
+    
+    # Check if consultation is complete
+    if st.session_state.conversation.is_consultation_complete():
+        # Auto-save if not already saved
+        if "last_saved_consultation" not in st.session_state or \
+           st.session_state.last_saved_consultation != len(st.session_state.chat_messages):
+            save_consultation_to_history()
+            st.session_state.last_saved_consultation = len(st.session_state.chat_messages)
+            st.success("✅ Consultation Complete! Automatically saved to your history.")
+        else:
+            st.success("✅ Consultation Complete! Saved in your medical history.")
+        
+        if st.button("🔄 New Consultation", use_container_width=True):
+            st.session_state.conversation.reset()
+            st.session_state.chat_messages = []
+            st.session_state.audio_file = None
+            if "last_saved_consultation" in st.session_state:
+                del st.session_state.last_saved_consultation
+            st.rerun()
+    else:
+        # Recording controls
+        col1, col2 = st.columns(2)
+
+        if col1.button("🎤 Start Recording") and not st.session_state.recording:
+            st.session_state.recording = True
+            st.session_state.recording_event.set()
+            
+            temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            st.session_state.audio_file = temp_wav.name
+            temp_wav.close()
+            
+            st.session_state.recording_thread = threading.Thread(
+                target=record_audio, 
+                args=(st.session_state.audio_file, st.session_state.recording_event), 
+                daemon=True
+            )
+            st.session_state.recording_thread.start()
+            st.info("🎙️ Recording... Speak now!")
+
+        if col2.button("⏹️ Stop Recording") and st.session_state.recording:
+            st.session_state.recording_event.clear()
+            st.session_state.recording = False
+            
+            if st.session_state.recording_thread:
+                st.session_state.recording_thread.join(timeout=2)
+            
+            time.sleep(0.5)
+            st.success("✅ Recording stopped!")
+            
+            if st.session_state.audio_file:
+                try:
+                    with open(st.session_state.audio_file, 'rb') as audio_file:
+                        audio_bytes = audio_file.read()
+                        st.audio(audio_bytes, format="audio/wav")
+                except Exception as e:
+                    st.error(f"Could not load audio: {e}")
+
+        # Process audio
+        if st.session_state.audio_file and not st.session_state.recording:
+            if st.button("📤 Send Voice Message"):
+                process_voice_message()
+        
+        # Reset button
+        if len(st.session_state.chat_messages) > 0:
+            if st.button("🔄 Start Over"):
+                st.session_state.conversation.reset()
+                st.session_state.chat_messages = []
+                st.session_state.audio_file = None
+                if "last_saved_consultation" in st.session_state:
+                    del st.session_state.last_saved_consultation
+                st.rerun()
+
+def process_voice_message():
+    """Process voice message and get AI response"""
+    try:
+        with st.spinner("Processing audio..."):
+            transcript, lang = transcribe_audio(st.session_state.audio_file)
+        
+        if transcript:
+            with st.spinner("Translating..."):
+                english_text = translate_to_english(transcript)
+            
+            # Add to chat
+            st.session_state.chat_messages.append({
+                "role": "user", 
+                "content": f"{english_text}\n\n*[Transcribed from {lang}]*"
+            })
+            
+            # Get AI response
+            with st.spinner("Doctor is analyzing..."):
+                ai_response = st.session_state.conversation.get_ai_response(english_text, rag)
+            
+            st.session_state.chat_messages.append({
+                "role": "assistant",
+                "content": ai_response
+            })
+            
+            # Clear audio
+            st.session_state.audio_file = None
+            st.rerun()
+        else:
+            st.error("Could not transcribe audio")
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+def save_consultation_to_history():
+    """Save completed consultation to database"""
+    consultation_data = st.session_state.conversation.get_full_consultation_summary()
+    
+    # Format for storage
+    transcript = consultation_data['initial_symptom']
+    conversation_text = "\n\n".join([
+        f"{'Patient' if msg['role'] == 'user' else 'Doctor'}: {msg['content']}"
+        for msg in consultation_data['conversation']
+    ])
+    
+    # Get the final analysis (last assistant message)
+    final_analysis = ""
+    for msg in reversed(consultation_data['conversation']):
+        if msg['role'] == 'assistant' and '##' in msg['content']:
+            final_analysis = msg['content']
+            break
+    
+    # Save to database
+    success = auth.save_medical_record(
+        st.session_state.user['id'],
+        transcript,
+        conversation_text,
+        final_analysis if final_analysis else conversation_text,
+        "Conversational Consultation"
+    )
+    
+    return success
 
 def history_page():
     st.title("📜 Medical History")
@@ -270,49 +411,60 @@ def history_page():
     records = auth.get_user_history(st.session_state.user['id'])
     
     if not records:
-        st.info("No medical consultations yet. Start by recording your symptoms!")
+        st.info("No medical consultations yet. Start a consultation to build your history!")
     else:
         st.write(f"Total consultations: {len(records)}")
         st.markdown("---")
         
         for idx, record in enumerate(records, 1):
             with st.expander(f"Consultation #{idx} - {record[5][:16]}"):
-                st.subheader("🗣️ Transcript")
+                st.subheader("🗣️ Initial Symptom")
                 st.write(record[1])
                 
-                st.subheader("🌐 Translation")
-                st.write(record[2])
+                st.subheader("💬 Conversation")
+                st.text_area("Full conversation", record[2], height=200, key=f"conv_{idx}")
                 
-                st.subheader("🩺 Analysis")
+                st.subheader("🩺 Final Analysis")
                 st.markdown(record[3])
                 
-                st.caption(f"Language: {record[4]} | Date: {record[5]}")
+                st.caption(f"Type: {record[4]} | Date: {record[5]}")
 
 def about_page():
     st.title("ℹ️ About")
     
     st.markdown("""
-    ### AI Medical Assistant with RAG
+    ### AI Medical Assistant with Conversational Consultation
     
-    This application uses:
+    This application provides an interactive medical consultation experience:
+    
+    #### 🎯 Features:
+    - 💬 **Chat Mode**: Type your symptoms and have a conversation with the AI doctor
+    - 🎤 **Voice Mode**: Speak in any supported language
+    - 🤖 **Intelligent Follow-ups**: AI asks relevant questions like a real doctor
+    - 🧠 **RAG-Enhanced**: Analysis backed by medical knowledge base
+    - 📜 **Medical History**: All consultations saved for your reference
+    - 🔐 **Secure**: Personal account with encrypted passwords
+    
+    #### 🩺 How It Works:
+    1. Describe your initial symptom (chat or voice)
+    2. AI doctor asks 2-4 follow-up questions
+    3. Receive comprehensive medical analysis
+    4. Get specialist recommendation and care advice
+    5. Consultation saved to your history
+    
+    #### 🌍 Supported Languages:
+    Hindi, English, Bengali, Kannada, Malayalam, Marathi, Odia, Punjabi, Tamil, Telugu, Gujarati
+    
+    #### 🛠️ Technology Stack:
     - **Speech-to-Text**: Sarvam AI
     - **Translation**: Sarvam AI
-    - **Medical Analysis**: Mistral AI + RAG (Retrieval-Augmented Generation)
-    - **Knowledge Base**: ChromaDB with medical information
-    
-    #### Features:
-    - 🎤 Multi-language voice input
-    - 🌐 Automatic translation
-    - 🧠 RAG-enhanced medical analysis
-    - 📜 Personal medical history
-    - 🔐 Secure user authentication
-    
-    #### Supported Languages:
-    Hindi, English, Bengali, Kannada, Malayalam, Marathi, Odia, Punjabi, Tamil, Telugu, Gujarati
+    - **Medical AI**: Mistral AI
+    - **Knowledge Base**: Custom RAG system
     
     ---
     
     ⚠️ **Disclaimer**: This is for educational purposes only and not a substitute for professional medical advice.
+    Always consult qualified healthcare providers for medical decisions.
     """)
 
 # ===== MAIN ROUTING =====
