@@ -13,6 +13,7 @@ load_dotenv()
 
 from modules.speech_to_text import transcribe_audio
 from modules.translate import translate_to_english
+from modules.text_to_speech import text_to_speech, translate_from_english
 from modules.auth import AuthSystem
 from modules.rag_medical import MedicalRAG
 from modules.conversation import MedicalConversation
@@ -44,6 +45,10 @@ if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
 if "consultation_mode" not in st.session_state:
     st.session_state.consultation_mode = "chat"  # chat or voice
+if "user_language" not in st.session_state:
+    st.session_state.user_language = "en-IN"  # Detected language
+if "voice_enabled" not in st.session_state:
+    st.session_state.voice_enabled = False  # AI voice responses on/off
 
 def record_audio(file_path, event):
     CHUNK = 1024
@@ -260,16 +265,38 @@ def chat_consultation():
                 st.rerun()
 
 def voice_consultation():
-    """Voice-based consultation"""
+    """Voice-based consultation with AI speaking back"""
     
-    st.write("🎤 **Speak your symptoms or responses**")
+    st.write("🎤 **Full Voice Conversation Mode**")
+    
+    # Voice toggle - more prominent
+    voice_col1, voice_col2 = st.columns([2, 1])
+    with voice_col1:
+        st.info(f"🌍 **Detected Language:** {st.session_state.user_language}")
+    with voice_col2:
+        voice_toggle = st.checkbox("🔊 AI Voice", value=st.session_state.voice_enabled, key="voice_toggle")
+        if voice_toggle != st.session_state.voice_enabled:
+            st.session_state.voice_enabled = voice_toggle
+            st.rerun()
+    
+    if st.session_state.voice_enabled:
+        st.success("✅ AI will speak back to you in your language!")
+    else:
+        st.warning("ℹ️ AI will respond with text only")
+    
+    st.markdown("---")
     
     # Display conversation history
     if st.session_state.chat_messages:
-        st.subheader("Conversation")
-        for message in st.session_state.chat_messages:
+        st.subheader("💬 Conversation")
+        for idx, message in enumerate(st.session_state.chat_messages):
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
+                
+                # Play audio if it's an assistant message and has audio
+                if message["role"] == "assistant" and "audio" in message:
+                    st.audio(message["audio"], format="audio/wav")
+                    st.caption("🔊 Playing AI voice response")
         st.markdown("---")
     
     # Check if consultation is complete
@@ -287,6 +314,7 @@ def voice_consultation():
             st.session_state.conversation.reset()
             st.session_state.chat_messages = []
             st.session_state.audio_file = None
+            st.session_state.user_language = "en-IN"
             if "last_saved_consultation" in st.session_state:
                 del st.session_state.last_saved_consultation
             st.rerun()
@@ -330,8 +358,8 @@ def voice_consultation():
 
         # Process audio
         if st.session_state.audio_file and not st.session_state.recording:
-            if st.button("📤 Send Voice Message"):
-                process_voice_message()
+            if st.button("📤 Send Voice Message", use_container_width=True):
+                process_voice_message_with_response()
         
         # Reset button
         if len(st.session_state.chat_messages) > 0:
@@ -339,42 +367,87 @@ def voice_consultation():
                 st.session_state.conversation.reset()
                 st.session_state.chat_messages = []
                 st.session_state.audio_file = None
+                st.session_state.user_language = "en-IN"
                 if "last_saved_consultation" in st.session_state:
                     del st.session_state.last_saved_consultation
                 st.rerun()
 
-def process_voice_message():
-    """Process voice message and get AI response"""
+def process_voice_message_with_response():
+    """Process voice message and get AI voice response"""
     try:
-        with st.spinner("Processing audio..."):
+        with st.spinner("🎧 Processing your audio..."):
             transcript, lang = transcribe_audio(st.session_state.audio_file)
         
         if transcript:
-            with st.spinner("Translating..."):
+            # Update detected language
+            st.session_state.user_language = lang
+            st.success(f"✅ Detected: {lang}")
+            
+            with st.spinner("🌐 Translating to English..."):
                 english_text = translate_to_english(transcript)
             
-            # Add to chat
+            # Add user message to chat
             st.session_state.chat_messages.append({
                 "role": "user", 
-                "content": f"{english_text}\n\n*[Transcribed from {lang}]*"
+                "content": f"**Original ({lang}):** {transcript}\n\n**Translation:** {english_text}"
             })
             
-            # Get AI response
-            with st.spinner("Doctor is analyzing..."):
-                ai_response = st.session_state.conversation.get_ai_response(english_text, rag)
+            # Get AI response in English
+            with st.spinner("🤖 Doctor is thinking..."):
+                ai_response_english = st.session_state.conversation.get_ai_response(english_text, rag)
             
-            st.session_state.chat_messages.append({
+            # Prepare AI response with voice if enabled
+            ai_response_translated = ai_response_english
+            audio_data = None
+            
+            if st.session_state.voice_enabled:
+                st.info(f"🔊 Voice mode is ON - Generating speech in {lang}")
+                
+                # Translate AI response back to user's language (if not English)
+                if lang != "en-IN":
+                    with st.spinner(f"🌍 Translating response to {lang}..."):
+                        ai_response_translated = translate_from_english(ai_response_english, lang)
+                        if not ai_response_translated:
+                            ai_response_translated = ai_response_english
+                            lang = "en-IN"
+                
+                # Generate speech
+                with st.spinner(f"🎙️ Converting to speech ({lang})..."):
+                    audio_data = text_to_speech(ai_response_translated, lang)
+                    if audio_data:
+                        st.success("✅ Voice generated successfully!")
+                    else:
+                        st.warning("⚠️ Voice generation failed, showing text only")
+            
+            # Build AI message content
+            message_content = f"**English:** {ai_response_english}"
+            
+            if lang != "en-IN" and ai_response_translated != ai_response_english:
+                message_content += f"\n\n**{lang} Translation:**\n{ai_response_translated}"
+            
+            # Add AI message to chat
+            ai_message = {
                 "role": "assistant",
-                "content": ai_response
-            })
+                "content": message_content
+            }
             
-            # Clear audio
+            if audio_data:
+                ai_message["audio"] = audio_data
+            
+            st.session_state.chat_messages.append(ai_message)
+            
+            # Clear audio file
             st.session_state.audio_file = None
+            
+            st.success("✅ Response ready! Check conversation above.")
+            time.sleep(1)
             st.rerun()
         else:
-            st.error("Could not transcribe audio")
+            st.error("❌ Could not transcribe audio. Please try again.")
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"❌ Error processing audio: {e}")
+        import traceback
+        st.error(traceback.format_exc())
 
 def save_consultation_to_history():
     """Save completed consultation to database"""
