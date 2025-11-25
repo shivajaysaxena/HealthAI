@@ -4,3 +4,10 @@ requests
 python-dotenv
 chromadb
 sentence-transformers
+streamlit
+pyaudio
+requests
+python-dotenv
+Pillow
+opencv-python
+numpy
